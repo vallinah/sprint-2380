@@ -3,6 +3,7 @@ package mg.itu.prom16;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -25,7 +26,8 @@ public class FrontController extends HttpServlet {
     }
 
     protected void processRequest(HttpServletRequest request, HttpServletResponse response)
-            throws ServletException, IOException {
+            throws ServletException, IOException, NoSuchMethodException, SecurityException, ClassNotFoundException,
+            InstantiationException, IllegalAccessException, IllegalArgumentException, InvocationTargetException {
         response.setContentType("text/html;charset=UTF-8");
         try (PrintWriter out = response.getWriter()) {
             out.println("<html>");
@@ -36,24 +38,21 @@ public class FrontController extends HttpServlet {
             out.println("<h1>URL actuelle :</h1>");
             out.println("<p>" + request.getRequestURL() + "</p>");
 
-            out.println("<h2>Liste des contrôleurs annotés avec @AnnotationController :</h2>");
-            for (String controller : listeControllers) {
-                out.println("<p>" + controller + "</p>");
-            }
-
             StringBuffer requestURL = request.getRequestURL();
             String[] requestUrlSplitted = requestURL.toString().split("/");
             String controllerSearched = requestUrlSplitted[requestUrlSplitted.length - 1];
 
+            out.println("<h2>Classe et methode associe a l'url :</h2>");
             if (!urlMaping.containsKey(controllerSearched)) {
                 out.println("<p>" + "Aucune methode associee a ce chemin." + "</p>");
             } else {
-                out.println("<h2>Classe et methode associe a l'url :</h2>");
                 Mapping mapping = urlMaping.get(controllerSearched);
-
-                out.println("<p>" + requestURL.toString() + "</p>");
-                out.println("<p>" + mapping.getClassName() + "</p>");
-                out.println("<p>" + mapping.getMethodeName() + "</p>");
+                Class<?> clazz = Class.forName(mapping.getClassName());
+                Method method = clazz.getMethod(mapping.getMethodeName());
+                Object ob = clazz.getDeclaredConstructor().newInstance();
+                Object returnValue = method.invoke(ob);
+                String stringValue = (String) returnValue;
+                out.println("La valeur de retour est " + stringValue);
 
             }
 
@@ -81,7 +80,7 @@ public class FrontController extends HttpServlet {
         }
     }
 
-    private void scanDirectory(File directory, String packageName) {
+    private void scanDirectory(File directory, String packageName) throws Exception {
         System.out.println("Scanning directory: " + directory.getAbsolutePath());
 
         for (File file : directory.listFiles()) {
@@ -119,12 +118,21 @@ public class FrontController extends HttpServlet {
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        processRequest(request, response);
+        try {
+            processRequest(request, response);
+        } catch (Exception e) {
+            // TODO: handle exception
+        }
     }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        processRequest(request, response);
+        try {
+
+            processRequest(request, response);
+        } catch (Exception e) {
+            // TODO: handle exception
+        }
     }
 }
