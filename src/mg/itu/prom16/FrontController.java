@@ -9,10 +9,12 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import jakarta.servlet.*;
 import jakarta.servlet.http.*;
+import mg.itu.prom16.models.ModelAndView;
 
 public class FrontController extends HttpServlet {
     private final List<String> listeControllers = new ArrayList<>();
@@ -49,9 +51,18 @@ public class FrontController extends HttpServlet {
                 Method method = clazz.getMethod(mapping.getMethodeName());
                 Object ob = clazz.getDeclaredConstructor().newInstance();
                 Object returnValue = method.invoke(ob);
-                String stringValue = (String) returnValue;
-                out.println("La valeur de retour est " + stringValue);
-
+                if (returnValue instanceof String) {
+                    out.println("La valeur de retour est " + (String) returnValue);
+                } else if (returnValue instanceof ModelAndView) {
+                    ModelAndView modelAndView = (ModelAndView) returnValue;
+                    for (Map.Entry<String, Object> entry : modelAndView.getData().entrySet()) {
+                        request.setAttribute(entry.getKey(), entry.getValue());
+                    }
+                    RequestDispatcher dispatcher = request.getRequestDispatcher(modelAndView.getUrl());
+                    dispatcher.forward(request, response);
+                } else {
+                    out.println("Type de données non reconnu");
+                }
             }
 
             out.println("</body>");
