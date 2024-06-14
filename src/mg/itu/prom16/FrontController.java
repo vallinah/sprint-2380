@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -19,19 +20,12 @@ import mg.itu.prom16.models.ModelAndView;
 public class FrontController extends HttpServlet {
     private final List<String> listeControllers = new ArrayList<>();
     private final Set<String> verifiedClasses = new HashSet<>();
-    private String controllerPackage;
     HashMap<String, Mapping> urlMaping = new HashMap<>();
-    String error = "";
 
     @Override
     public void init(ServletConfig config) throws ServletException {
         super.init(config);
-        controllerPackage = getInitParameter("controller-package");
-        try {
-            this.scanControllers(config);
-        } catch (Exception e) {
-            error = e.getMessage();
-        }
+        scanControllers(config);
     }
 
     protected void processRequest(HttpServletRequest request, HttpServletResponse response)
@@ -50,16 +44,36 @@ public class FrontController extends HttpServlet {
             String controllerSearched = requestUrlSplitted[requestUrlSplitted.length - 1];
 
             out.println("<h2>Classe et methode associe a l'url :</h2>");
-            if (error != "") {
-                out.println(error);
-            } else if (!urlMaping.containsKey(controllerSearched)) {
+            if (!urlMaping.containsKey(controllerSearched)) {
                 out.println("<p>" + "Aucune methode associee a ce chemin." + "</p>");
             } else {
                 Mapping mapping = urlMaping.get(controllerSearched);
                 Class<?> clazz = Class.forName(mapping.getClassName());
-                Method method = clazz.getMethod(mapping.getMethodeName());
+                Method method = null;
+
+                // Find the method that matches the request type (GET or POST)
+                for (Method m : clazz.getDeclaredMethods()) {
+                    if (m.getName().equals(mapping.getMethodeName())) {
+                        if (request.getMethod().equalsIgnoreCase("GET")
+                                && m.isAnnotationPresent(AnnotationGet.class)) {
+                            method = m;
+                            break;
+                        } else if (request.getMethod().equalsIgnoreCase("POST")
+                                && m.isAnnotationPresent(AnnotationPost.class)) {
+                            method = m;
+                            break;
+                        }
+                    }
+                }
+
+                if (method == null) {
+                    out.println("<p>Aucune méthode correspondante trouvée.</p>");
+                    return;
+                }
+
+                Object[] parameters = getMethodParameters(method, request);
                 Object ob = clazz.getDeclaredConstructor().newInstance();
-                Object returnValue = method.invoke(ob);
+                Object returnValue = method.invoke(ob, parameters);
                 if (returnValue instanceof String) {
                     out.println("La valeur de retour est " + (String) returnValue);
                 } else if (returnValue instanceof ModelAndView) {
@@ -80,7 +94,8 @@ public class FrontController extends HttpServlet {
         }
     }
 
-    private void scanControllers(ServletConfig config) throws Exception {
+    private void scanControllers(ServletConfig config) {
+        String controllerPackage = config.getInitParameter("controller-package");
         System.out.println("Scanning package: " + controllerPackage);
 
         // Scanner les classes du package donné dans WEB-INF/classes
@@ -90,59 +105,72 @@ public class FrontController extends HttpServlet {
             if (directory.exists()) {
                 scanDirectory(directory, controllerPackage);
             } else {
-                throw new Exception("Directory does not exist: " + directory.getAbsolutePath());
+                System.out.println("Le repertoire n'existe pas: " + directory.getAbsolutePath());
             }
         } catch (Exception e) {
-            throw e;
+            e.printStackTrace();
         }
     }
 
     private void scanDirectory(File directory, String packageName) throws Exception {
         System.out.println("Scanning directory: " + directory.getAbsolutePath());
-        try {
-            if (directory.listFiles() != null) {
 
-                for (File file : directory.listFiles()) {
-                    System.out.println("Processing file: " + file.getName());
+        for (File file : directory.listFiles()) {
+            System.out.println("Processing file: " + file.getName());
 
-                    if (file.isDirectory()) {
-                        scanDirectory(file, packageName + "." + file.getName());
-                    } else if (file.getName().endsWith(".class")) {
-                        String className = packageName + '.' + file.getName().substring(0, file.getName().length() - 6);
-                        try {
-                            Class<?> clazz = Class.forName(className);
-                            if (clazz.isAnnotationPresent(AnnotationController.class)
-                                    && !verifiedClasses.contains(clazz.getName())) {
-                                AnnotationController annotation = clazz.getAnnotation(AnnotationController.class);
-                                listeControllers.add(clazz.getName() + " (" + annotation.value() + ")");
-                                verifiedClasses.add(clazz.getName());
-                                Method[] methods = clazz.getMethods();
-                                for (Method m : methods) {
-                                    if (m.isAnnotationPresent(AnnotationGet.class)) {
-                                        Mapping mapping = new Mapping(className, m.getName());
-                                        AnnotationGet AnnotationGet = m.getAnnotation(AnnotationGet.class);
-                                        String annotationValue = AnnotationGet.value();
-                                        if (urlMaping.containsKey(annotationValue)) {
-                                            throw new Exception("double url" + annotationValue);
-                                        } else {
-                                            urlMaping.put(annotationValue, mapping);
-                                        }
-                                    }
+            if (file.isDirectory()) {
+                scanDirectory(file, packageName + "." + file.getName());
+            } else if (file.getName().endsWith(".class")) {
+                String className = packageName + '.' + file.getName().substring(0, file.getName().length() - 6);
+                try {
+                    Class<?> clazz = Class.forName(className);
+                    if (clazz.isAnnotationPresent(AnnotationController.class)
+                            && !verifiedClasses.contains(clazz.getName())) {
+                        AnnotationController annotation = clazz.getAnnotation(AnnotationController.class);
+                        listeControllers.add(clazz.getName() + " (" + annotation.value() + ")");
+                        verifiedClasses.add(clazz.getName());
+                        Method[] methods = clazz.getMethods();
+                        for (Method m : methods) {
+                            if (m.isAnnotationPresent(AnnotationGet.class)) {
+                                Mapping map = new Mapping(className, m.getName());
+                                String valeur = m.getAnnotation(AnnotationGet.class).value();
+                                if (urlMaping.containsKey(valeur)) {
+                                    throw new Exception("double url" + valeur);
+                                } else {
+                                    urlMaping.put(valeur, map);
                                 }
-                                System.out.println("Added controller: " + clazz.getName());
+                            } else if (m.isAnnotationPresent(AnnotationPost.class)) {
+                                Mapping map = new Mapping(className, m.getName());
+                                String valeur = m.getAnnotation(AnnotationPost.class).value();
+                                if (urlMaping.containsKey(valeur)) {
+                                    throw new Exception("double url" + valeur);
+                                } else {
+                                    urlMaping.put(valeur, map);
+                                }
                             }
-                        } catch (Exception e) {
-                            throw e;
                         }
+                        System.out.println("Added controller: " + clazz.getName());
                     }
+                } catch (ClassNotFoundException e) {
+                    e.printStackTrace();
                 }
-            } else {
-                throw new Exception("le package est vide");
             }
-        } catch (Exception e) {
-            throw e;
+        }
+    }
+
+    private Object[] getMethodParameters(Method method, HttpServletRequest request) {
+        Parameter[] parameters = method.getParameters();
+        Object[] parameterValues = new Object[parameters.length];
+
+        for (int i = 0; i < parameters.length; i++) {
+            if (parameters[i].isAnnotationPresent(Param.class)) {
+                Param param = parameters[i].getAnnotation(Param.class);
+                String paramValue = request.getParameter(param.value());
+                parameterValues[i] = paramValue; // Assuming all parameters are strings for simplicity
+            }
         }
 
+        return parameterValues;
     }
 
     @Override
