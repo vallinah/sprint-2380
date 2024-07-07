@@ -37,7 +37,8 @@ public class FrontController extends HttpServlet {
     protected void processRequest(HttpServletRequest request, HttpServletResponse response)
             throws Exception {
         response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
+        PrintWriter out = response.getWriter();
+        try {
             out.println("<html>");
             out.println("<head>");
             out.println("<title>FrontController</title>");
@@ -96,6 +97,8 @@ public class FrontController extends HttpServlet {
             out.println("</body>");
             out.println("</html>");
             out.close();
+        }catch(Exception e){
+            out.println(e.getMessage());
         }
     }
 
@@ -110,7 +113,7 @@ public class FrontController extends HttpServlet {
             if (directory.exists()) {
                 scanDirectory(directory, controllerPackage);
             } else {
-                System.out.println("Le repertoire n'existe pas: " + directory.getAbsolutePath());
+                throw new Exception("Le repertoire n'existe pas: " + directory.getAbsolutePath());
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -185,6 +188,10 @@ public class FrontController extends HttpServlet {
         Object[] parameterValues = new Object[parameters.length];
 
         for (int i = 0; i < parameters.length; i++) {
+            if (!parameters[i].isAnnotationPresent(Param.class)
+                    && !parameters[i].isAnnotationPresent(ParamObject.class)) {
+                throw new Exception("ETU002380: les attributs doivent etre annoter par Param ou ParamObject");
+            }
             if (parameters[i].isAnnotationPresent(Param.class)) {
                 Param param = parameters[i].getAnnotation(Param.class);
                 String paramValue = request.getParameter(param.value());
