@@ -79,6 +79,7 @@ public class FrontController extends HttpServlet {
 
                 Object[] parameters = getMethodParameters(method, request);
                 Object ob = clazz.getDeclaredConstructor().newInstance();
+                verifieCustomSession(ob, request);
                 Object returnValue = method.invoke(ob, parameters);
                 if (returnValue instanceof String) {
                     out.println("La valeur de retour est " + (String) returnValue);
@@ -189,8 +190,13 @@ public class FrontController extends HttpServlet {
 
         for (int i = 0; i < parameters.length; i++) {
             if (!parameters[i].isAnnotationPresent(Param.class)
-                    && !parameters[i].isAnnotationPresent(ParamObject.class)) {
+                    && !parameters[i].isAnnotationPresent(ParamObject.class)
+                    && !parameters[i].getType().equals(CustomSession.class)) {
                 throw new Exception("ETU002380: les attributs doivent etre annoter par Param ou ParamObject");
+            }
+            if (parameters[i].getType().equals(CustomSession.class)) {
+                CustomSession session = new CustomSession(request.getSession());
+                parameterValues[i] = session;
             }
             if (parameters[i].isAnnotationPresent(Param.class)) {
                 Param param = parameters[i].getAnnotation(Param.class);
@@ -239,6 +245,19 @@ public class FrontController extends HttpServlet {
         }
 
         return parameterValues;
+    }
+
+    public void verifieCustomSession(Object o, HttpServletRequest request)throws Exception {
+        Class<?> c = o.getClass();
+        Field[] fields = c.getDeclaredFields();
+        for (Field field : fields) {
+            if (field.getType().equals(CustomSession.class)) {
+                Method sessionMethod = c.getMethod("setSession", CustomSession.class);
+                CustomSession session = new CustomSession(request.getSession());
+                sessionMethod.invoke(o, session);
+                return;
+            }
+        }
     }
 
     @Override
