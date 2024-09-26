@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import com.google.gson.Gson;
+
 import jakarta.servlet.*;
 import jakarta.servlet.http.*;
 import mg.itu.prom16.annotations.AnnotationController;
@@ -21,6 +23,7 @@ import mg.itu.prom16.annotations.AnnotationPost;
 import mg.itu.prom16.annotations.Param;
 import mg.itu.prom16.annotations.ParamObject;
 import mg.itu.prom16.annotations.RequestParam;
+import mg.itu.prom16.annotations.RestAPI;
 import mg.itu.prom16.models.ModelAndView;
 
 public class FrontController extends HttpServlet {
@@ -81,17 +84,33 @@ public class FrontController extends HttpServlet {
                 Object ob = clazz.getDeclaredConstructor().newInstance();
                 verifieCustomSession(ob, request);
                 Object returnValue = method.invoke(ob, parameters);
-                if (returnValue instanceof String) {
-                    out.println("La valeur de retour est " + (String) returnValue);
-                } else if (returnValue instanceof ModelAndView) {
-                    ModelAndView modelAndView = (ModelAndView) returnValue;
-                    for (Map.Entry<String, Object> entry : modelAndView.getData().entrySet()) {
-                        request.setAttribute(entry.getKey(), entry.getValue());
+                if (method.isAnnotationPresent(RestAPI.class)) {
+                    response.setContentType("application/json");
+                    Gson gson = new Gson();
+                    String stringResponse;
+                    if (returnValue instanceof String) {
+                        stringResponse = gson.toJson(returnValue);
+                        out.print(stringResponse);
+                    } else if (returnValue instanceof ModelAndView) {
+                        ModelAndView modelAndView = (ModelAndView) returnValue;
+                        stringResponse = gson.toJson(modelAndView.getData());
+                        out.print(stringResponse);
+                    } else {
+                        out.println("Type de données non reconnu");
                     }
-                    RequestDispatcher dispatcher = request.getRequestDispatcher(modelAndView.getUrl());
-                    dispatcher.forward(request, response);
-                } else {
-                    out.println("Type de données non reconnu");
+                }else{
+                    if (returnValue instanceof String) {
+                        out.println("La valeur de retour est " + (String) returnValue);
+                    } else if (returnValue instanceof ModelAndView) {
+                        ModelAndView modelAndView = (ModelAndView) returnValue;
+                        for (Map.Entry<String, Object> entry : modelAndView.getData().entrySet()) {
+                            request.setAttribute(entry.getKey(), entry.getValue());
+                        }
+                        RequestDispatcher dispatcher = request.getRequestDispatcher(modelAndView.getUrl());
+                        dispatcher.forward(request, response);
+                    } else {
+                        out.println("Type de données non reconnu");
+                    }
                 }
             }
 
