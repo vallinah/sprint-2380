@@ -24,7 +24,10 @@ import mg.itu.prom16.annotations.Param;
 import mg.itu.prom16.annotations.ParamObject;
 import mg.itu.prom16.annotations.RequestParam;
 import mg.itu.prom16.annotations.RestAPI;
+import mg.itu.prom16.annotations.Url;
 import mg.itu.prom16.models.ModelAndView;
+import mg.itu.prom16.util.Mapping;
+import mg.itu.prom16.util.VerbAction;
 
 public class FrontController extends HttpServlet {
     private final List<String> listeControllers = new ArrayList<>();
@@ -60,19 +63,22 @@ public class FrontController extends HttpServlet {
                 Class<?> clazz = Class.forName(mapping.getClassName());
                 Method method = null;
 
-                // Find the method that matches the request type (GET or POST)
+                if (!mapping.isVerbAction(request.getMethod())) {
+                    out.print("Le verbe HTTP utilisé n'est pas pris en charge pour cette action.");
+                }
+
                 for (Method m : clazz.getDeclaredMethods()) {
-                    if (m.getName().equals(mapping.getMethodeName())) {
-                        if (request.getMethod().equalsIgnoreCase("GET")
-                                && m.isAnnotationPresent(AnnotationGet.class)) {
-                            method = m;
-                            break;
-                        } else if (request.getMethod().equalsIgnoreCase("POST")
-                                && m.isAnnotationPresent(AnnotationPost.class)) {
+                    for (VerbAction action : mapping.getVerbActions()) {
+                        if (m.getName().equals(action.getMethodeName())
+                                && action.getVerb().equalsIgnoreCase(request.getMethod())) {
                             method = m;
                             break;
                         }
                     }
+                    if (method != null) {
+                        break;
+                    }
+
                 }
 
                 if (method == null) {
@@ -98,7 +104,7 @@ public class FrontController extends HttpServlet {
                     } else {
                         out.println("Type de données non reconnu");
                     }
-                }else{
+                } else {
                     if (returnValue instanceof String) {
                         out.println("La valeur de retour est " + (String) returnValue);
                     } else if (returnValue instanceof ModelAndView) {
@@ -117,7 +123,7 @@ public class FrontController extends HttpServlet {
             out.println("</body>");
             out.println("</html>");
             out.close();
-        }catch(Exception e){
+        } catch (Exception e) {
             out.println(e.getMessage());
         }
     }
@@ -158,23 +164,33 @@ public class FrontController extends HttpServlet {
                         listeControllers.add(clazz.getName() + " (" + annotation.value() + ")");
                         verifiedClasses.add(clazz.getName());
                         Method[] methods = clazz.getMethods();
-                        for (Method m : methods) {
-                            if (m.isAnnotationPresent(AnnotationGet.class)) {
-                                Mapping map = new Mapping(className, m.getName());
-                                String valeur = m.getAnnotation(AnnotationGet.class).value();
-                                if (urlMaping.containsKey(valeur)) {
-                                    throw new Exception("double url" + valeur);
-                                } else {
-                                    urlMaping.put(valeur, map);
+                        for (Method method : methods) {
+                            if (method.isAnnotationPresent(Url.class)) {
+                                Url urlAnnotation = method.getAnnotation(Url.class);
+                                String url = urlAnnotation.value();
+                                String verb = "GET";
+                                if (method.isAnnotationPresent(AnnotationGet.class)) {
+                                    verb = "GET";
+                                } else if (method.isAnnotationPresent(AnnotationPost.class)) {
+                                    verb = "POST";
                                 }
-                            } else if (m.isAnnotationPresent(AnnotationPost.class)) {
-                                Mapping map = new Mapping(className, m.getName());
-                                String valeur = m.getAnnotation(AnnotationPost.class).value();
-                                if (urlMaping.containsKey(valeur)) {
-                                    throw new Exception("double url" + valeur);
+                                VerbAction verbAction = new VerbAction(method.getName(), verb);
+                                Mapping map = new Mapping(className);
+                                if (urlMaping.containsKey(url)) {
+                                    Mapping existingMap = urlMaping.get(url);
+                                    if (existingMap.isVerbPresent(verbAction)) {
+                                        throw new Exception("Duplicate URL: " + url);
+                                    } else {
+                                        existingMap.setVerbActions(verbAction);
+                                    }
                                 } else {
-                                    urlMaping.put(valeur, map);
+                                    map.setVerbActions(verbAction);
+                                    urlMaping.put(url, map);
                                 }
+
+                            } else {
+                                throw new Exception(
+                                        "il faut avoir une annotation url dans le controlleur  " + className);
                             }
                         }
                         System.out.println("Added controller: " + clazz.getName());
@@ -235,10 +251,10 @@ public class FrontController extends HttpServlet {
                 for (Field field : parameterType.getDeclaredFields()) {
                     RequestParam param = field.getAnnotation(RequestParam.class);
                     String fieldName = field.getName(); // Récupère le nom du champ
-                    // parameterType.getSimpleName().toLowerCase() + "." + 
+                    // parameterType.getSimpleName().toLowerCase() + "." +
                     String paramName = (param != null) ? param.value() : fieldName; // Forme le nom du
-                                                                                                      // paramètre de la
-                                                                                                      // requête attendu
+                                                                                    // paramètre de la
+                                                                                    // requête attendu
                     String paramValue = request.getParameter(paramName); // Récupère la valeur du paramètre de la
                                                                          // requête
 
@@ -266,7 +282,7 @@ public class FrontController extends HttpServlet {
         return parameterValues;
     }
 
-    public void verifieCustomSession(Object o, HttpServletRequest request)throws Exception {
+    public void verifieCustomSession(Object o, HttpServletRequest request) throws Exception {
         Class<?> c = o.getClass();
         Field[] fields = c.getDeclaredFields();
         for (Field field : fields) {
