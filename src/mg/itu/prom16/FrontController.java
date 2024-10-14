@@ -33,6 +33,7 @@ public class FrontController extends HttpServlet {
     private final List<String> listeControllers = new ArrayList<>();
     private final Set<String> verifiedClasses = new HashSet<>();
     HashMap<String, Mapping> urlMaping = new HashMap<>();
+    String error = "";
 
     @Override
     public void init(ServletConfig config) throws ServletException {
@@ -44,6 +45,9 @@ public class FrontController extends HttpServlet {
             throws Exception {
         response.setContentType("text/html;charset=UTF-8");
         PrintWriter out = response.getWriter();
+        int errorCode = 0; // Code d'erreur par défaut (aucune erreur)
+        String errorMessage = "Une erreur inattendue est survenue.";
+        String errorDetails = null;
         try {
             out.println("<html>");
             out.println("<head>");
@@ -56,15 +60,29 @@ public class FrontController extends HttpServlet {
             String controllerSearched = requestUrlSplitted[requestUrlSplitted.length - 1];
 
             out.println("<h2>Classe et methode associe a l'url :</h2>");
-            if (!urlMaping.containsKey(controllerSearched)) {
-                out.println("<p>" + "Aucune methode associee a ce chemin." + "</p>");
+            if (!error.isEmpty()) {
+                errorCode = 400;
+                errorMessage = "Erreur de demande";
+                errorDetails = error;
+                displayErrorPage(out, errorCode, errorMessage, errorDetails);
+                return;
+            } else if (!urlMaping.containsKey(controllerSearched)) {
+                errorCode = 404;
+                errorMessage = "Non trouvé";
+                errorDetails = "Aucune méthode associée au chemin spécifié.";
+                displayErrorPage(out, errorCode, errorMessage, errorDetails);
+                return;
             } else {
                 Mapping mapping = urlMaping.get(controllerSearched);
                 Class<?> clazz = Class.forName(mapping.getClassName());
                 Method method = null;
 
                 if (!mapping.isVerbAction(request.getMethod())) {
-                    out.print("Le verbe HTTP utilisé n'est pas pris en charge pour cette action.");
+                    errorCode = 405;
+                    errorMessage = "Méthode non autorisée";
+                    errorDetails = "Le verbe HTTP utilisé n'est pas pris en charge pour cette action.";
+                    displayErrorPage(out, errorCode, errorMessage, errorDetails);
+                    return;
                 }
 
                 for (Method m : clazz.getDeclaredMethods()) {
@@ -82,7 +100,10 @@ public class FrontController extends HttpServlet {
                 }
 
                 if (method == null) {
-                    out.println("<p>Aucune méthode correspondante trouvée.</p>");
+                    errorCode = 404;
+                    errorMessage = "Non trouvé";
+                    errorDetails = "Aucune méthode correspondante trouvée.";
+                    displayErrorPage(out, errorCode, errorMessage, errorDetails);
                     return;
                 }
 
@@ -102,7 +123,11 @@ public class FrontController extends HttpServlet {
                         stringResponse = gson.toJson(modelAndView.getData());
                         out.print(stringResponse);
                     } else {
-                        out.println("Type de données non reconnu");
+                        errorCode = 500;
+                        errorMessage = "Erreur interne du serveur";
+                        errorDetails = "Type de données non reconnu.";
+                        displayErrorPage(out, errorCode, errorMessage, errorDetails);
+                        return;
                     }
                 } else {
                     if (returnValue instanceof String) {
@@ -115,7 +140,11 @@ public class FrontController extends HttpServlet {
                         RequestDispatcher dispatcher = request.getRequestDispatcher(modelAndView.getUrl());
                         dispatcher.forward(request, response);
                     } else {
-                        out.println("Type de données non reconnu");
+                        errorCode = 500;
+                        errorMessage = "Erreur interne du serveur";
+                        errorDetails = "Type de données non reconnu.";
+                        displayErrorPage(out, errorCode, errorMessage, errorDetails);
+                        return;
                     }
                 }
             }
@@ -124,7 +153,10 @@ public class FrontController extends HttpServlet {
             out.println("</html>");
             out.close();
         } catch (Exception e) {
-            out.println(e.getMessage());
+            errorCode = 500;
+            errorMessage = "Erreur interne du serveur";
+            errorDetails = e.getMessage();
+            displayErrorPage(out, errorCode, errorMessage, errorDetails);
         }
     }
 
@@ -293,6 +325,20 @@ public class FrontController extends HttpServlet {
                 return;
             }
         }
+    }
+
+    private void displayErrorPage(PrintWriter out, int errorCode, String errorMessage, String errorDetails) {
+        out.println("<html>");
+        out.println("<head><title>Erreur " + errorCode + "</title></head>");
+        out.println("<body>");
+        out.println("<div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto;'>");
+        out.println("<h1 style='color: #e74c3c;'>" + errorMessage + "</h1>");
+        out.println("<p><strong>Code d'erreur :</strong> " + errorCode + "</p>");
+        out.println("<p>" + errorDetails + "</p>");
+        out.println("<a href='/' style='color: #3498db;'>Retour à l'accueil</a>");
+        out.println("</div>");
+        out.println("</body>");
+        out.println("</html>");
     }
 
     @Override
