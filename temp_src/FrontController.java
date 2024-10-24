@@ -1,7 +1,9 @@
 package mg.itu.prom16;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintWriter;
 import java.lang.reflect.Method;
 import java.lang.reflect.Field;
@@ -16,6 +18,7 @@ import java.util.Set;
 import com.google.gson.Gson;
 
 import jakarta.servlet.*;
+import jakarta.servlet.annotation.MultipartConfig;
 import jakarta.servlet.http.*;
 import mg.itu.prom16.annotations.AnnotationController;
 import mg.itu.prom16.annotations.AnnotationGet;
@@ -29,10 +32,12 @@ import mg.itu.prom16.models.ModelAndView;
 import mg.itu.prom16.util.Mapping;
 import mg.itu.prom16.util.VerbAction;
 
+@MultipartConfig
 public class FrontController extends HttpServlet {
     private final List<String> listeControllers = new ArrayList<>();
     private final Set<String> verifiedClasses = new HashSet<>();
     HashMap<String, Mapping> urlMaping = new HashMap<>();
+    String error = "";
 
     @Override
     public void init(ServletConfig config) throws ServletException {
@@ -44,6 +49,9 @@ public class FrontController extends HttpServlet {
             throws Exception {
         response.setContentType("text/html;charset=UTF-8");
         PrintWriter out = response.getWriter();
+        int errorCode = 0; // Code d'erreur par défaut (aucune erreur)
+        String errorMessage = "Une erreur inattendue est survenue.";
+        String errorDetails = null;
         try {
             out.println("<html>");
             out.println("<head>");
@@ -56,15 +64,29 @@ public class FrontController extends HttpServlet {
             String controllerSearched = requestUrlSplitted[requestUrlSplitted.length - 1];
 
             out.println("<h2>Classe et methode associe a l'url :</h2>");
-            if (!urlMaping.containsKey(controllerSearched)) {
-                out.println("<p>" + "Aucune methode associee a ce chemin." + "</p>");
+            if (!error.isEmpty()) {
+                errorCode = 400;
+                errorMessage = "Erreur de demande";
+                errorDetails = error;
+                displayErrorPage(out, errorCode, errorMessage, errorDetails);
+                return;
+            } else if (!urlMaping.containsKey(controllerSearched)) {
+                errorCode = 404;
+                errorMessage = "Non trouvé";
+                errorDetails = "Aucune méthode associée au chemin spécifié.";
+                displayErrorPage(out, errorCode, errorMessage, errorDetails);
+                return;
             } else {
                 Mapping mapping = urlMaping.get(controllerSearched);
                 Class<?> clazz = Class.forName(mapping.getClassName());
                 Method method = null;
 
                 if (!mapping.isVerbAction(request.getMethod())) {
-                    out.print("Le verbe HTTP utilisé n'est pas pris en charge pour cette action.");
+                    errorCode = 405;
+                    errorMessage = "Méthode non autorisée";
+                    errorDetails = "Le verbe HTTP utilisé n'est pas pris en charge pour cette action.";
+                    displayErrorPage(out, errorCode, errorMessage, errorDetails);
+                    return;
                 }
 
                 for (Method m : clazz.getDeclaredMethods()) {
@@ -82,7 +104,10 @@ public class FrontController extends HttpServlet {
                 }
 
                 if (method == null) {
-                    out.println("<p>Aucune méthode correspondante trouvée.</p>");
+                    errorCode = 404;
+                    errorMessage = "Non trouvé";
+                    errorDetails = "Aucune méthode correspondante trouvée.";
+                    displayErrorPage(out, errorCode, errorMessage, errorDetails);
                     return;
                 }
 
@@ -102,7 +127,11 @@ public class FrontController extends HttpServlet {
                         stringResponse = gson.toJson(modelAndView.getData());
                         out.print(stringResponse);
                     } else {
-                        out.println("Type de données non reconnu");
+                        errorCode = 500;
+                        errorMessage = "Erreur interne du serveur";
+                        errorDetails = "Type de données non reconnu.";
+                        displayErrorPage(out, errorCode, errorMessage, errorDetails);
+                        return;
                     }
                 } else {
                     if (returnValue instanceof String) {
@@ -115,7 +144,11 @@ public class FrontController extends HttpServlet {
                         RequestDispatcher dispatcher = request.getRequestDispatcher(modelAndView.getUrl());
                         dispatcher.forward(request, response);
                     } else {
-                        out.println("Type de données non reconnu");
+                        errorCode = 500;
+                        errorMessage = "Erreur interne du serveur";
+                        errorDetails = "Type de données non reconnu.";
+                        displayErrorPage(out, errorCode, errorMessage, errorDetails);
+                        return;
                     }
                 }
             }
@@ -124,7 +157,10 @@ public class FrontController extends HttpServlet {
             out.println("</html>");
             out.close();
         } catch (Exception e) {
-            out.println(e.getMessage());
+            errorCode = 500;
+            errorMessage = "Erreur interne du serveur";
+            errorDetails = e.getMessage();
+            displayErrorPage(out, errorCode, errorMessage, errorDetails);
         }
     }
 
@@ -235,10 +271,17 @@ public class FrontController extends HttpServlet {
             }
             if (parameters[i].isAnnotationPresent(Param.class)) {
                 Param param = parameters[i].getAnnotation(Param.class);
-                String paramValue = request.getParameter(param.value());
-                parameterValues[i] = convertParameter(paramValue, parameters[i].getType()); // Assuming all parameters
-                                                                                            // are strings for
-                                                                                            // simplicity
+                if (parameters[i].getType() == Part.class) {
+                    Part file = request.getPart(param.value());
+                    upload(file);
+                    parameterValues[i] = file;
+                } else {
+                    String paramValue = request.getParameter(param.value());
+                    parameterValues[i] = convertParameter(paramValue, parameters[i].getType()); // Assuming all
+                                                                                                // parameters
+                }
+                // are strings for
+                // simplicity
             }
             // Vérifie si le paramètre est annoté avec @RequestObject
             else if (parameters[i].isAnnotationPresent(ParamObject.class)) {
@@ -282,6 +325,27 @@ public class FrontController extends HttpServlet {
         return parameterValues;
     }
 
+    public void upload(Part filePart) throws Exception {
+        // Obtenir le nom de fichier
+        String fileName = filePart.getSubmittedFileName();
+
+        // Chemin où vous souhaitez enregistrer le fichier
+        String uploadPath = "D:/ITU/S5/upload/" + fileName;
+
+        // Lire le fichier et le stocker
+        try (InputStream fileContent = filePart.getInputStream();
+                FileOutputStream fos = new FileOutputStream(new File(uploadPath))) {
+
+            byte[] buffer = new byte[1024];
+            int bytesRead;
+            while ((bytesRead = fileContent.read(buffer)) != -1) {
+                fos.write(buffer, 0, bytesRead);
+            }
+        } catch (Exception e) {
+            throw new Exception("Erreur lors du téléchargement : " + e.getMessage());
+        }
+    }
+
     public void verifieCustomSession(Object o, HttpServletRequest request) throws Exception {
         Class<?> c = o.getClass();
         Field[] fields = c.getDeclaredFields();
@@ -293,6 +357,20 @@ public class FrontController extends HttpServlet {
                 return;
             }
         }
+    }
+
+    private void displayErrorPage(PrintWriter out, int errorCode, String errorMessage, String errorDetails) {
+        out.println("<html>");
+        out.println("<head><title>Erreur " + errorCode + "</title></head>");
+        out.println("<body>");
+        out.println("<div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto;'>");
+        out.println("<h1 style='color: #e74c3c;'>" + errorMessage + "</h1>");
+        out.println("<p><strong>Code d'erreur :</strong> " + errorCode + "</p>");
+        out.println("<p>" + errorDetails + "</p>");
+        out.println("<a href='/' style='color: #3498db;'>Retour à l'accueil</a>");
+        out.println("</div>");
+        out.println("</body>");
+        out.println("</html>");
     }
 
     @Override
