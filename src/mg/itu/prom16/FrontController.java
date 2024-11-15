@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+
 import com.google.gson.Gson;
 
 import jakarta.servlet.*;
@@ -26,7 +27,11 @@ import mg.itu.prom16.annotations.AnnotationPost;
 import mg.itu.prom16.annotations.Param;
 import mg.itu.prom16.annotations.ParamObject;
 import mg.itu.prom16.annotations.RequestParam;
+import mg.itu.prom16.annotations.Required;
 import mg.itu.prom16.annotations.RestAPI;
+import mg.itu.prom16.annotations.TypeDouble;
+import mg.itu.prom16.annotations.TypeInt;
+import mg.itu.prom16.annotations.Range;
 import mg.itu.prom16.annotations.Url;
 import mg.itu.prom16.models.ModelAndView;
 import mg.itu.prom16.util.Mapping;
@@ -300,10 +305,10 @@ public class FrontController extends HttpServlet {
                                                                                     // requête attendu
                     String paramValue = request.getParameter(paramName); // Récupère la valeur du paramètre de la
                                                                          // requête
-
                     // Vérifie si la valeur du paramètre n'est pas null (si elle est trouvée dans la
                     // requête)
                     if (paramValue != null) {
+                        validateFieldValue(paramValue, field);
                         Object convertedValue = convertParameter(paramValue, field.getType()); // Convertit la valeur de
                                                                                                // la requête en type de
                                                                                                // champ requis
@@ -373,6 +378,49 @@ public class FrontController extends HttpServlet {
         out.println("</html>");
     }
 
+    public void validateFieldValue(String paramValue, Field field) throws Exception {
+        // Vérifie @Required
+        if (field.isAnnotationPresent(Required.class)) {
+            Required required = field.getAnnotation(Required.class);
+            if (paramValue.isEmpty()) {
+                throw new Exception(required.message());
+            }
+        }
+    
+        // Vérifie @Decimal
+        if (field.isAnnotationPresent(TypeDouble.class)) {
+            TypeDouble TypeDouble = field.getAnnotation(TypeDouble.class);
+            try {
+                Double.parseDouble(paramValue); // Vérifie si paramValue est un décimal
+            } catch (NumberFormatException e) {
+                throw new Exception(TypeDouble.message());
+            }
+        }
+    
+        // Vérifie @TypeInt
+        if (field.isAnnotationPresent(TypeInt.class)) {
+            TypeInt typeInt = field.getAnnotation(TypeInt.class);
+            try {
+                Integer.parseInt(paramValue); // Vérifie si paramValue est un entier
+            } catch (NumberFormatException e) {
+                throw new Exception(typeInt.message());
+            }
+        }
+    
+        // Vérifie @Range
+        if (field.isAnnotationPresent(Range.class)) {
+            Range range = field.getAnnotation(Range.class);
+            try {
+                double doubleValue = Double.parseDouble(paramValue);
+                if (doubleValue < range.min() || doubleValue > range.max()) {
+                    throw new Exception(range.message());
+                }
+            } catch (NumberFormatException e) {
+                throw new Exception("Value is not a number for range validation");
+            }
+        }
+    }
+    
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
