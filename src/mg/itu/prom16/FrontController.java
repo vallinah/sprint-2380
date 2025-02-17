@@ -24,6 +24,7 @@ import mg.itu.prom16.annotations.AnnotationController;
 import mg.itu.prom16.annotations.OnErrorValidation;
 import mg.itu.prom16.annotations.AnnotationGet;
 import mg.itu.prom16.annotations.AnnotationPost;
+import mg.itu.prom16.annotations.Auth;
 import mg.itu.prom16.annotations.Param;
 import mg.itu.prom16.annotations.ParamObject;
 import mg.itu.prom16.annotations.RequestParam;
@@ -34,6 +35,7 @@ import mg.itu.prom16.annotations.TypeInt;
 import mg.itu.prom16.annotations.Range;
 import mg.itu.prom16.annotations.Url;
 import mg.itu.prom16.models.ModelAndView;
+import mg.itu.prom16.util.ConfigManager;
 import mg.itu.prom16.util.Mapping;
 import mg.itu.prom16.util.ValidationValue;
 import mg.itu.prom16.util.VerbAction;
@@ -50,6 +52,7 @@ public class FrontController extends HttpServlet {
     public void init(ServletConfig config) throws ServletException {
         super.init(config);
         scanControllers(config);
+        ConfigManager.init(config);
     }
 
     protected void processRequest(HttpServletRequest request, HttpServletResponse response)
@@ -122,6 +125,13 @@ public class FrontController extends HttpServlet {
                     displayErrorPage(out, errorCode, errorMessage, errorDetails, controllerSearched,
                             request.getMethod());
                     return;
+                }
+                CustomSession session = new CustomSession(request.getSession());
+                StringBuilder authError = new StringBuilder();
+                if (!session.checkAuthorization(method, authError)) {
+                    request.setAttribute("authErro", authError.toString()); // Mettre à jour la requête avec le message
+                                                                            // d'erreur
+                    request.getRequestDispatcher(ConfigManager.getLoginUrl()).forward(request, response);
                 }
 
                 Object[] parameters = getMethodParameters(method, request, validationsErrors, validationValue);
@@ -202,7 +212,7 @@ public class FrontController extends HttpServlet {
             errorCode = 500;
             errorMessage = "Erreur interne du serveur";
             errorDetails = e.getMessage();
-            displayErrorPage(out, errorCode, errorMessage, errorDetails, "controllerSearched", request.getMethod());
+            displayErrorPage(out, errorCode, errorMessage, errorDetails, "error", request.getMethod());
 
         }
     }
@@ -431,22 +441,6 @@ public class FrontController extends HttpServlet {
             }
         }
     }
-
-    // private void displayErrorPage(PrintWriter out, int errorCode, String
-    // errorMessage, String errorDetails) {
-    // out.println("<html>");
-    // out.println("<head><title>Erreur " + errorCode + "</title></head>");
-    // out.println("<body>");
-    // out.println("<div style='font-family: Arial, sans-serif; max-width: 600px;
-    // margin: auto;'>");
-    // out.println("<h1 style='color: #e74c3c;'>" + errorMessage + "</h1>");
-    // out.println("<p><strong>Code d'erreur :</strong> " + errorCode + "</p>");
-    // out.println("<p>" + errorDetails + "</p>");
-    // out.println("<a href='/' style='color: #3498db;'>Retour à l'accueil</a>");
-    // out.println("</div>");
-    // out.println("</body>");
-    // out.println("</html>");
-    // }
 
     private void displayErrorPage(PrintWriter out, int errorCode, String errorMessage, String errorDetails,
             String controllerSearched, String method) {
