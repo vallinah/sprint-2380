@@ -128,7 +128,7 @@ public class FrontController extends HttpServlet {
                 }
                 CustomSession session = new CustomSession(request.getSession());
                 StringBuilder authError = new StringBuilder();
-                if (!session.checkAuthorization(method, authError)) {
+                if (!session.checkAuthorization(clazz, method, authError)) {
                     request.setAttribute("authErro", authError.toString()); // Mettre à jour la requête avec le message
                                                                             // d'erreur
                     request.getRequestDispatcher(ConfigManager.getLoginUrl()).forward(request, response);
@@ -266,57 +266,71 @@ public class FrontController extends HttpServlet {
 
     private void scanDirectory(File directory, String packageName) throws Exception {
         System.out.println("Scanning directory: " + directory.getAbsolutePath());
+        File[] files = directory.listFiles();
 
-        for (File file : directory.listFiles()) {
-            System.out.println("Processing file: " + file.getName());
+        System.out.println("Nombre de fichiers trouvés dans " + directory.getAbsolutePath() + " : " + files.length);
 
-            if (file.isDirectory()) {
-                scanDirectory(file, packageName + "." + file.getName());
-            } else if (file.getName().endsWith(".class")) {
-                String className = packageName + '.' + file.getName().substring(0, file.getName().length() - 6);
-                try {
-                    Class<?> clazz = Class.forName(className);
-                    if (clazz.isAnnotationPresent(AnnotationController.class)
-                            && !verifiedClasses.contains(clazz.getName())) {
-                        AnnotationController annotation = clazz.getAnnotation(AnnotationController.class);
-                        listeControllers.add(clazz.getName() + " (" + annotation.value() + ")");
-                        verifiedClasses.add(clazz.getName());
-                        Method[] methods = clazz.getMethods();
-                        for (Method method : methods) {
-                            if (method.isAnnotationPresent(Url.class)) {
-                                Url urlAnnotation = method.getAnnotation(Url.class);
-                                String url = urlAnnotation.value();
-                                String verb = "GET";
-                                if (method.isAnnotationPresent(AnnotationGet.class)) {
-                                    verb = "GET";
-                                } else if (method.isAnnotationPresent(AnnotationPost.class)) {
-                                    verb = "POST";
+        for (File file : files) {
+            try {
+                System.out.println("Processing file: " + file.getName());
+
+                if (file.isDirectory()) {
+                    scanDirectory(file, packageName + "." + file.getName());
+                } else if (file.getName().endsWith(".class")) {
+                    String className = packageName + '.' + file.getName().substring(0, file.getName().length() - 6);
+                    try {
+                        Class<?> clazz = Class.forName(className);
+                        if (clazz.isAnnotationPresent(AnnotationController.class)
+                                && !verifiedClasses.contains(clazz.getName())) {
+                            AnnotationController annotation = clazz.getAnnotation(AnnotationController.class);
+                            listeControllers.add(clazz.getName() + " (" + annotation.value() + ")");
+                            verifiedClasses.add(clazz.getName());
+                            Method[] methods = clazz.getMethods();
+                            for (Method method : methods) {
+                                if (method.getDeclaringClass().equals(Object.class)) {
+                                    continue; // Ignore les méthodes héritées comme equals(), hashCode(), etc.
                                 }
-                                VerbAction verbAction = new VerbAction(method.getName(), verb);
-                                Mapping map = new Mapping(className);
-                                if (urlMaping.containsKey(url)) {
-                                    Mapping existingMap = urlMaping.get(url);
-                                    if (existingMap.isVerbPresent(verbAction)) {
-                                        throw new Exception("Duplicate URL: " + url);
+                                if (method.isAnnotationPresent(Url.class)) {
+                                    Url urlAnnotation = method.getAnnotation(Url.class);
+                                    String url = urlAnnotation.value();
+                                    String verb = "GET";
+                                    if (method.isAnnotationPresent(AnnotationGet.class)) {
+                                        verb = "GET";
+                                    } else if (method.isAnnotationPresent(AnnotationPost.class)) {
+                                        verb = "POST";
+                                    }
+                                    VerbAction verbAction = new VerbAction(method.getName(), verb);
+                                    Mapping map = new Mapping(className);
+                                    if (urlMaping.containsKey(url)) {
+                                        Mapping existingMap = urlMaping.get(url);
+                                        if (existingMap.isVerbPresent(verbAction)) {
+                                            throw new Exception("Duplicate URL: " + url);
+                                        } else {
+                                            existingMap.setVerbActions(verbAction);
+                                        }
                                     } else {
-                                        existingMap.setVerbActions(verbAction);
+                                        map.setVerbActions(verbAction);
+                                        System.out.println("ClassName: " + className + " url " + url + "");
+                                        urlMaping.put(url, map);
                                     }
                                 } else {
-                                    map.setVerbActions(verbAction);
-                                    urlMaping.put(url, map);
+                                    System.out.println("ClassName: " + className + " method " + method.getName()
+                                            + " doit etre annoté en url");
+                                    throw new Exception(
+                                            "il faut avoir une annotation url dans le controlleur  " + className);
                                 }
-
-                            } else {
-                                throw new Exception(
-                                        "il faut avoir une annotation url dans le controlleur  " + className);
                             }
+                            System.out.println("Added controller: " + clazz.getName());
                         }
-                        System.out.println("Added controller: " + clazz.getName());
+                    } catch (ClassNotFoundException e) {
+                        e.printStackTrace();
+                        System.out.println(e);
                     }
-                } catch (ClassNotFoundException e) {
-                    e.printStackTrace();
                 }
+            } catch (Exception e) {
+                // TODO: handle exception
             }
+
         }
     }
 
