@@ -128,7 +128,7 @@ public class FrontController extends HttpServlet {
                 }
                 CustomSession session = new CustomSession(request.getSession());
                 StringBuilder authError = new StringBuilder();
-                if (!session.checkAuthorization(method, authError)) {
+                if (!session.checkAuthorization(clazz, method, authError)) {
                     request.setAttribute("authErro", authError.toString()); // Mettre à jour la requête avec le message
                                                                             // d'erreur
                     request.getRequestDispatcher(ConfigManager.getLoginUrl()).forward(request, response);
@@ -266,8 +266,16 @@ public class FrontController extends HttpServlet {
 
     private void scanDirectory(File directory, String packageName) throws Exception {
         System.out.println("Scanning directory: " + directory.getAbsolutePath());
+        File[] files = directory.listFiles();
+        // if (files == null) {
+        // System.err.println("Erreur : le dossier est vide ou inaccessible - " +
+        // directory.getAbsolutePath());
+        // return;
+        // }
 
-        for (File file : directory.listFiles()) {
+        System.out.println("Nombre de fichiers trouvés dans " + directory.getAbsolutePath() + " : " + files.length);
+
+        for (File file : files) {
             System.out.println("Processing file: " + file.getName());
 
             if (file.isDirectory()) {
@@ -303,10 +311,13 @@ public class FrontController extends HttpServlet {
                                     }
                                 } else {
                                     map.setVerbActions(verbAction);
+                                    System.out.println("ClassName: " + className + " url " + url + "");
                                     urlMaping.put(url, map);
                                 }
 
                             } else {
+                                System.out.println("ClassName: " + className + " method " + method.getName()
+                                        + " doit etre annoté en url");
                                 throw new Exception(
                                         "il faut avoir une annotation url dans le controlleur  " + className);
                             }
@@ -315,6 +326,7 @@ public class FrontController extends HttpServlet {
                     }
                 } catch (ClassNotFoundException e) {
                     e.printStackTrace();
+                    System.out.println(e);
                 }
             }
         }
